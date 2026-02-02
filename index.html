@@ -58,7 +58,7 @@
                     <span class="text-red-500">🇮🇩 ID</span> ➝ 🇯🇵 JP
                 </label>
                 <select id="select-ij" class="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-xl focus:ring-red-500 focus:border-red-500 block p-3 shadow-sm transition" onchange="fetchData('ij')">
-                    <option selected disabled>Pilih Dari Sheet Spreadsheet...</option>
+                    <option selected disabled value="">Pilih Dari Sheet Spreadsheet...</option>
                 </select>
             </div>
 
@@ -68,7 +68,7 @@
                     <span class="text-blue-500">🇯🇵 JP</span> ➝ 🇮🇩 ID
                 </label>
                 <select id="select-ji" class="w-full bg-gray-50 border border-gray-200 text-gray-800 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-3 shadow-sm transition" onchange="fetchData('ji')">
-                    <option selected disabled>Pilih Dari Sheet Spreadsheet...</option>
+                    <option selected disabled value="">Pilih Dari Sheet Spreadsheet...</option>
                 </select>
             </div>
         </div>
@@ -106,30 +106,29 @@
         const API_URL = 'https://script.google.com/macros/s/AKfycbx6rG-SFgfwh6_mARCnqtzBAL-7x3QPMtHdyYb1bg_SLy27cOQQF_8MpiWXOApVROyj/exec'; 
         const MAX_TARGET = 140; // Target statis 140 KG
 
-        // Format Angka: 2 Desimal, Hapus trailing zeros
+        // Constants untuk LocalStorage keys
+        const STORAGE_KEY_IJ = 'yanoshi_last_sheet_ij';
+        const STORAGE_KEY_JI = 'yanoshi_last_sheet_ji';
+
         function formatNumber(num) {
             if (num === "" || num === null || isNaN(num)) return "0";
             let val = parseFloat(num);
             return val.toFixed(2); 
         }
 
-        // Logic Warna Progress Bar
         function getColorClass(percentage) {
-            if (percentage >= 100) return 'bg-purple-600'; // Overload
-            if (percentage >= 85) return 'bg-red-500'; // Kritis
-            if (percentage >= 50) return 'bg-amber-400'; // Warning
-            return 'bg-emerald-500'; // Aman
+            if (percentage >= 100) return 'bg-purple-600'; 
+            if (percentage >= 85) return 'bg-red-500'; 
+            if (percentage >= 50) return 'bg-amber-400'; 
+            return 'bg-emerald-500'; 
         }
 
-        // FUNGSI UTAMA DISPLAY CARD
-        // Parameter baru 'showProgress' (boolean) ditambahkan
         function createCard(title, value, icon, delay, showProgress = false) {
             const numVal = parseFloat(value) || 0;
             const formattedVal = formatNumber(numVal);
             
             let bottomContent = '';
 
-            // Hanya jika showProgress = true, kita hitung dan tampilkan bar
             if (showProgress) {
                 const percentage = Math.min((numVal / MAX_TARGET) * 100, 100);
                 const colorClass = getColorClass(percentage);
@@ -147,7 +146,6 @@
                     </div>
                 </div>`;
             } else {
-                // Jika tidak ada progress bar, beri sedikit ruang kosong agar rapi (opsional)
                 bottomContent = `<div class="mt-4 h-2"></div>`;
             }
 
@@ -175,18 +173,44 @@
                 const json = await res.json();
                 if (json.status === 'success') {
                     const opts = json.data.map(n => `<option value="${n}">${n}</option>`).join('');
-                    document.getElementById('select-ij').innerHTML += opts;
-                    document.getElementById('select-ji').innerHTML += opts;
+                    
+                    const selectIJ = document.getElementById('select-ij');
+                    const selectJI = document.getElementById('select-ji');
+                    
+                    selectIJ.innerHTML += opts;
+                    selectJI.innerHTML += opts;
+
+                    // === FITUR BARU: AUTO RESTORE HISTORY ===
+                    // Cek apakah ada data tersimpan di LocalStorage
+                    const savedIJ = localStorage.getItem(STORAGE_KEY_IJ);
+                    const savedJI = localStorage.getItem(STORAGE_KEY_JI);
+
+                    // Jika ada dan valid (ada di dalam opsi), set value dan load data
+                    if (savedIJ && selectIJ.querySelector(`option[value="${savedIJ}"]`)) {
+                        selectIJ.value = savedIJ;
+                        fetchData('ij'); // Load otomatis
+                    }
+
+                    if (savedJI && selectJI.querySelector(`option[value="${savedJI}"]`)) {
+                        selectJI.value = savedJI;
+                        fetchData('ji'); // Load otomatis
+                    }
                 }
             } catch(e) { console.error(e); }
         }
 
         async function fetchData(type) {
-            const select = document.getElementById(type === 'ij' ? 'select-ij' : 'select-ji');
+            const selectId = type === 'ij' ? 'select-ij' : 'select-ji';
+            const select = document.getElementById(selectId);
             const wrapper = document.getElementById(type === 'ij' ? 'wrapper-ij' : 'wrapper-ji');
             const grid = document.getElementById(type === 'ij' ? 'grid-ij' : 'grid-ji');
             
             if(!select.value) return;
+
+            // === FITUR BARU: SIMPAN HISTORY ===
+            // Simpan pilihan user ke LocalStorage agar ingat saat direfresh
+            const storageKey = type === 'ij' ? STORAGE_KEY_IJ : STORAGE_KEY_JI;
+            localStorage.setItem(storageKey, select.value);
 
             // Loading State
             grid.innerHTML = '<div class="col-span-full py-8 text-center text-gray-400 animate-pulse">Mengambil data satelit...</div>';
@@ -199,10 +223,6 @@
                 if (json.status === 'success') {
                     const d = json.data;
                     
-                    // PERHATIKAN: Parameter terakhir adalah showProgress
-                    // true = Tampilkan Progress Bar (Hanya untuk Terpenuhi)
-                    // false = Sembunyikan Progress Bar (Untuk komponen lainnya)
-                    
                     grid.innerHTML = `
                         ${createCard('Terpenuhi', d.kuota, 'fa-solid fa-box-open', 0, true)}
                         ${createCard('Sementara', d.sementara, 'fa-solid fa-scale-unbalanced', 0.1, false)}
@@ -210,10 +230,8 @@
                         ${createCard('Kabin', d.kabin, 'fa-solid fa-briefcase', 0.3, false)}
                     `;
 
-                    // Jalankan Animasi
                     startAnimations(grid);
                     
-                    // Update Waktu
                     const now = new Date();
                     document.getElementById('lastUpdated').innerText = now.toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'});
                 }
@@ -223,10 +241,9 @@
         }
 
         function startAnimations(container) {
-            // 1. Animasi Angka (Counter Up)
             container.querySelectorAll('.counter').forEach(counter => {
                 const target = parseFloat(counter.getAttribute('data-target'));
-                const duration = 1500; // ms
+                const duration = 1500; 
                 const start = performance.now();
                 
                 requestAnimationFrame(function animate(currentTime) {
@@ -234,13 +251,12 @@
                     if (timeFraction > 1) timeFraction = 1;
                     
                     const currentVal = (timeFraction * target).toFixed(2);
-                    counter.innerText = currentVal; // Update teks
+                    counter.innerText = currentVal; 
 
                     if (timeFraction < 1) requestAnimationFrame(animate);
                 });
             });
 
-            // 2. Animasi Progress Bar (Hanya yang memiliki class progress-fill)
             setTimeout(() => {
                 const bars = container.querySelectorAll('.progress-fill');
                 if (bars.length > 0) {
@@ -251,10 +267,8 @@
             }, 100);
         }
 
-        // Init
         document.addEventListener('DOMContentLoaded', loadSheets);
 
-        // Tambahkan CSS Keyframe untuk animasi fade in
         const styleSheet = document.createElement("style");
         styleSheet.innerText = `
             @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
